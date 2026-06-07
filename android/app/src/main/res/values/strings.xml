@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Agape Bible Church</string>
+    <string name="title_activity_main">Agape Bible Church</string>
+    <string name="package_name">com.agape.biblechurch</string>
+    <string name="custom_url_scheme">com.agape.biblechurch</string>
+</resources>

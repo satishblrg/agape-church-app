@@ -1,13 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { auth } from "../../firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+} from "firebase/auth";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState("Checking login...");
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && user.emailVerified) {
+        localStorage.setItem("userEmail", user.email);
+        window.location.href = "/home";
+      } else {
+        setMessage("");
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -23,13 +39,13 @@ export default function LoginPage() {
       );
 
       const user = userCredential.user;
-      localStorage.setItem("userEmail", user.email);
 
       if (!user.emailVerified) {
         setMessage("Please verify your email before logging in.");
         return;
       }
 
+      localStorage.setItem("userEmail", user.email);
       window.location.href = "/home";
     } catch (error) {
       setMessage(error.message);
@@ -74,14 +90,18 @@ export default function LoginPage() {
           </button>
         </div>
 
-<a href="/forgot-password" className="block mt-4 text-purple-300 font-semibold">
-  Forgot Password?
-</a>
+        <a
+          href="/forgot-password"
+          className="block mt-4 text-purple-300 font-semibold"
+        >
+          Forgot Password?
+        </a>
+
         {message && <p className="mt-5 text-sm text-purple-300">{message}</p>}
 
         <div className="mt-6">
           <a href="/signup" className="text-purple-300 font-semibold">
-            Don't have an account? Create Account
+            Don&apos;t have an account? Create Account
           </a>
         </div>
       </div>
