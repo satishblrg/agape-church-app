@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { db } from "../../firebase";
+import { db, auth } from "../../firebase";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 
 export default function HomePage() {
   const [announcements, setAnnouncements] = useState([]);
@@ -12,6 +13,8 @@ export default function HomePage() {
   const [weeklyEvents, setWeeklyEvents] = useState(null);
   const [birthdayWishes, setBirthdayWishes] = useState([]);
   const [anniversaryWishes, setAnniversaryWishes] = useState([]);
+  const [childrenBirthdayWishes, setChildrenBirthdayWishes] = useState([]);
+  const [userData, setUserData] = useState(null);
 
   useEffect(() => {
     loadAnnouncements();
@@ -19,31 +22,35 @@ export default function HomePage() {
     loadPrayerRequests();
     loadWeeklyEvents();
     loadBirthdayAndAnniversaryWishes();
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+
+        if (snap.exists()) {
+          setUserData(snap.data());
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const isDateInThisWeek = (dateString) => {
-    if (!dateString) return false;
+ const isDateToday = (dateString) => {
+  if (!dateString) return false;
 
-    const today = new Date();
-    const day = today.getDay();
+  const today = new Date();
+  const date = new Date(dateString);
 
-    const sunday = new Date(today);
-    sunday.setHours(0, 0, 0, 0);
-    sunday.setDate(today.getDate() - day);
-
-    const saturday = new Date(sunday);
-    saturday.setDate(sunday.getDate() + 6);
-    saturday.setHours(23, 59, 59, 999);
-
-    const date = new Date(dateString);
-    const thisYearDate = new Date(
-      today.getFullYear(),
-      date.getMonth(),
-      date.getDate()
-    );
-
-    return thisYearDate >= sunday && thisYearDate <= saturday;
-  };
+  return (
+    today.getDate() === date.getDate() &&
+    today.getMonth() === date.getMonth()
+  );
+};
 
   const getBelovedTitle = (gender) => {
     if (gender === "Male") return "Beloved Brother";
@@ -60,16 +67,32 @@ export default function HomePage() {
         ...item.data(),
       }));
 
-      const birthdays = users.filter((user) => isDateInThisWeek(user.dob));
+     const birthdays = users.filter((user) => isDateToday(user.dob));
 
-      const anniversaries = users.filter(
-        (user) =>
-          user.maritalStatus === "Married" &&
-          isDateInThisWeek(user.anniversaryDate)
-      );
+const childrenBirthdays = [];
 
-      setBirthdayWishes(birthdays);
-      setAnniversaryWishes(anniversaries);
+users.forEach((user) => {
+  if (user.children && user.children.length > 0) {
+    user.children.forEach((child) => {
+      if (isDateToday(child.dob)) {
+        childrenBirthdays.push({
+          childName: child.name,
+          parentName: user.fullName,
+        });
+      }
+    });
+  }
+});
+
+const anniversaries = users.filter(
+  (user) =>
+    user.maritalStatus === "Married" &&
+    isDateToday(user.anniversaryDate)
+);
+
+setBirthdayWishes(birthdays);
+setChildrenBirthdayWishes(childrenBirthdays);
+setAnniversaryWishes(anniversaries);
     } catch (error) {
       console.log(error);
     }
@@ -133,20 +156,37 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#0F172A] text-white px-5 py-6 pb-24">
-      <header className="text-center">
-        <img
-          src="/church-logo.png"
-          alt="Agape Bible Church Logo"
-          className="mx-auto h-24 w-24 object-contain"
-        />
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <img
+            src="/church-logo.png"
+            alt="Agape Bible Church Logo"
+            className="h-20 w-20 object-contain"
+          />
 
-        <h1 className="mt-3 text-3xl font-black">
-          Agape Bible Church - Bangalore
-        </h1>
+          <h1 className="mt-3 text-2xl font-black">
+            Agape Bible Church
+          </h1>
 
-        <p className="mt-1 text-white/60">
-          Welcome to the Official Church App
-        </p>
+          <p className="text-white/60">Bangalore</p>
+        </div>
+
+        <a href="/profile" className="flex flex-col items-center">
+         <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-purple-500 bg-purple-600 text-xl font-black text-white">
+  {userData?.fullName
+    ? userData.fullName
+        .split(" ")
+        .map((name) => name[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "P"}
+</div>
+
+          <p className="mt-2 max-w-24 text-center text-sm font-semibold leading-4">
+            {userData?.fullName || "Profile"}
+          </p>
+        </a>
       </header>
 
       <section className="mt-8 rounded-3xl border border-white/15 bg-white/10 p-6 backdrop-blur-xl">
@@ -173,7 +213,9 @@ export default function HomePage() {
         </marquee>
       </section>
 
-      {(birthdayWishes.length > 0 || anniversaryWishes.length > 0) && (
+      {(birthdayWishes.length > 0 ||
+  childrenBirthdayWishes.length > 0 ||
+  anniversaryWishes.length > 0) && (
         <section className="mt-6 rounded-3xl border border-pink-400/30 bg-pink-600/20 p-6 backdrop-blur-xl">
           <h2 className="text-xl font-black">
             Birthday & Wedding Anniversary Wishes
@@ -195,6 +237,30 @@ export default function HomePage() {
                   </p>
                 </div>
               ))}
+              {childrenBirthdayWishes.length > 0 && (
+  <div className="mt-5 space-y-4">
+    <h3 className="font-black text-pink-300">
+      Children Birthday Wishes
+    </h3>
+
+    {childrenBirthdayWishes.map((item, index) => (
+      <div
+        key={`child-birthday-${index}`}
+        className="rounded-2xl border border-white/10 bg-white/10 p-4"
+      >
+        <p className="text-white/80 leading-7">
+          Dear {item.childName},
+          <br />
+          Agape Family wishes you a Happy Birthday.
+        </p>
+
+        <p className="mt-2 text-sm text-white/50">
+          Family of {item.parentName}
+        </p>
+      </div>
+    ))}
+  </div>
+)}
             </div>
           )}
 
@@ -259,7 +325,7 @@ export default function HomePage() {
               return (
                 <>
                   <p className="font-bold text-purple-300">Sunday Services</p>
-                  <p>First Service: 7:30 AM</p>
+                  <p>First Service: 7:00 AM</p>
                   <p>Second Service: 9:30 AM</p>
                 </>
               );
@@ -388,7 +454,7 @@ export default function HomePage() {
           }}
           className="mt-5 inline-block rounded-2xl bg-purple-600 px-6 py-3 font-bold"
         >
-          Join Google Meet
+          Join The Prayer Now
         </button>
       </section>
 
@@ -399,7 +465,7 @@ export default function HomePage() {
           <div className="rounded-3xl border border-white/15 bg-white/10 p-5 backdrop-blur-xl">
             <h3 className="font-black">Sunday Services</h3>
             <p className="mt-2 text-white/70">
-              First Service: 7:30 AM | Second Service: 9:30 AM
+              First Service: 7:00 AM | Second Service: 9:30 AM
             </p>
           </div>
 

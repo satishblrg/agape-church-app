@@ -1,21 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { auth, db } from "../../firebase";
-import {
-  createUserWithEmailAndPassword,
-  sendEmailVerification,
-} from "firebase/auth";
-import {
-  doc,
-  setDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 
-export default function SignupPage() {
+export default function EditProfilePage() {
+  const [uid, setUid] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [popupMessage, setPopupMessage] = useState("");
+
   const [fullName, setFullName] = useState("");
   const [gender, setGender] = useState("");
   const [dob, setDob] = useState("");
@@ -28,51 +22,72 @@ export default function SignupPage() {
   const [spouseName, setSpouseName] = useState("");
   const [anniversaryDate, setAnniversaryDate] = useState("");
   const [children, setChildren] = useState([]);
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [popupMessage, setPopupMessage] = useState("");
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        window.location.href = "/login";
+        return;
+      }
+
+      setUid(user.uid);
+
+      const snap = await getDoc(doc(db, "users", user.uid));
+
+      if (snap.exists()) {
+        const data = snap.data();
+
+        setFullName(data.fullName || "");
+        setGender(data.gender || "");
+        setDob(data.dob || "");
+        setPhone(data.phone || "");
+        setEmail(data.email || user.email || "");
+        setArea(data.area || "");
+        setAreaLeader(data.areaLeader || "");
+        setMemberType(data.memberType || "");
+        setMaritalStatus(data.maritalStatus || "");
+        setSpouseName(data.spouseName || "");
+        setAnniversaryDate(data.anniversaryDate || "");
+        setChildren(data.children || []);
+      }
+
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const addChild = () => {
     setChildren([...children, { name: "", dob: "" }]);
   };
 
   const updateChild = (index, field, value) => {
-    const updatedChildren = [...children];
-    updatedChildren[index][field] = value;
-    setChildren(updatedChildren);
+    const updated = [...children];
+    updated[index][field] = value;
+    setChildren(updated);
   };
 
   const removeChild = (index) => {
-    const updatedChildren = children.filter((_, i) => i !== index);
-    setChildren(updatedChildren);
+    setChildren(children.filter((_, i) => i !== index));
   };
 
-  const handleSignup = async () => {
+  const saveProfile = async () => {
     if (
       !fullName ||
       !gender ||
       !dob ||
       !phone ||
-      !email ||
       !area ||
       !areaLeader ||
       !memberType ||
-      !maritalStatus ||
-      !password ||
-      !confirmPassword
+      !maritalStatus
     ) {
-      setPopupMessage("Please fill all details.");
+      setPopupMessage("Please fill all required details.");
       return;
     }
 
     if (!/^[6-9][0-9]{9}$/.test(phone)) {
       setPopupMessage("Please enter a valid Indian mobile number.");
-      return;
-    }
-
-    if (password.length < 8) {
-      setPopupMessage("Password must be at least 8 characters long.");
       return;
     }
 
@@ -88,79 +103,43 @@ export default function SignupPage() {
       }
     }
 
-    if (password !== confirmPassword) {
-      setPopupMessage("Passwords do not match.");
-      return;
-    }
+    await updateDoc(doc(db, "users", uid), {
+      fullName,
+      gender,
+      dob,
+      phone,
+      area,
+      areaLeader,
+      memberType,
+      isVolunteer: memberType === "Volunteer",
+      maritalStatus,
+      spouseName: maritalStatus === "Married" ? spouseName : "",
+      anniversaryDate: maritalStatus === "Married" ? anniversaryDate : "",
+      children: maritalStatus === "Married" ? children : [],
+    });
 
-    try {
-      const phoneCheck = query(
-        collection(db, "users"),
-        where("phone", "==", phone)
-      );
-
-      const phoneSnapshot = await getDocs(phoneCheck);
-
-      if (!phoneSnapshot.empty) {
-        setPopupMessage("This phone number is already registered.");
-        return;
-      }
-
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-
-      const user = userCredential.user;
-
-      await sendEmailVerification(user);
-
-      await setDoc(doc(db, "users", user.uid), {
-        fullName,
-        gender,
-        dob,
-        phone,
-        email,
-        area,
-        areaLeader,
-        memberType,
-        isVolunteer: memberType === "Volunteer",
-        volunteerStatus:
-          memberType === "Volunteer" ? "Pending" : "Not Volunteer",
-        maritalStatus,
-        spouseName: maritalStatus === "Married" ? spouseName : "",
-        anniversaryDate:
-          maritalStatus === "Married" ? anniversaryDate : "",
-        children: maritalStatus === "Married" ? children : [],
-        emailVerified: false,
-        createdAt: new Date().toISOString(),
-      });
-
-      setPopupMessage(
-        "Account created successfully. Verification email sent. Please check your inbox."
-      );
-
-      setTimeout(() => {
-        window.location.href = "/login";
-      }, 3000);
-    } catch (error) {
-      setPopupMessage(error.message);
-    }
+    setPopupMessage("Profile updated successfully.");
   };
 
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#0F172A] text-white flex items-center justify-center">
+        Loading profile...
+      </main>
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-[#0F172A] text-white flex items-center justify-center px-6 py-10">
-      <div className="w-full max-w-md text-center">
-        <img
-          src="/church-logo.png"
-          alt="Church Logo"
-          className="mx-auto h-28 w-28 object-contain"
-        />
+    <main className="min-h-screen bg-[#0F172A] text-white px-6 py-8">
+      <div className="max-w-md mx-auto">
+        <a
+          href="/profile"
+          className="inline-block rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold"
+        >
+          ← Back to Profile
+        </a>
 
-        <h1 className="mt-4 text-3xl font-black">Create Account</h1>
-
-        <p className="mt-2 text-white/60">Join Agape Bible Church App</p>
+        <h1 className="mt-8 text-3xl font-black text-center">Edit Profile</h1>
 
         <div className="mt-8 space-y-4">
           <input
@@ -168,29 +147,26 @@ export default function SignupPage() {
             placeholder="Full Name"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
           />
 
           <select
             value={gender}
             onChange={(e) => setGender(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
           >
             <option value="" className="text-black">Gender</option>
             <option value="Male" className="text-black">Male</option>
             <option value="Female" className="text-black">Female</option>
           </select>
 
-          <div className="space-y-2 text-left">
-            <label className="text-sm font-bold text-purple-300">
-              Date of Birth
-            </label>
-
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-purple-300">Date of Birth</label>
             <input
               type="date"
               value={dob}
               onChange={(e) => setDob(e.target.value)}
-              className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+              className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
             />
           </div>
 
@@ -199,15 +175,14 @@ export default function SignupPage() {
             placeholder="Phone Number"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
           />
 
           <input
             type="email"
-            placeholder="Mail ID"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+            disabled
+            className="w-full rounded-2xl border border-white/15 bg-white/5 p-4 text-white/50 outline-none"
           />
 
           <input
@@ -215,7 +190,7 @@ export default function SignupPage() {
             placeholder="Area"
             value={area}
             onChange={(e) => setArea(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
           />
 
           <input
@@ -223,13 +198,13 @@ export default function SignupPage() {
             placeholder="Area Leader Name"
             value={areaLeader}
             onChange={(e) => setAreaLeader(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
           />
 
           <select
             value={memberType}
             onChange={(e) => setMemberType(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
           >
             <option value="" className="text-black">Member Type</option>
             <option value="Member" className="text-black">Member</option>
@@ -247,7 +222,7 @@ export default function SignupPage() {
                 setChildren([]);
               }
             }}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
           >
             <option value="" className="text-black">Marital Status</option>
             <option value="Unmarried" className="text-black">Unmarried</option>
@@ -261,30 +236,23 @@ export default function SignupPage() {
                 placeholder="Spouse Name"
                 value={spouseName}
                 onChange={(e) => setSpouseName(e.target.value)}
-                className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+                className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
               />
 
-              <div className="space-y-2 text-left">
+              <div className="space-y-2">
                 <label className="text-sm font-bold text-purple-300">
                   Wedding Anniversary Date
                 </label>
-
                 <input
                   type="date"
                   value={anniversaryDate}
                   onChange={(e) => setAnniversaryDate(e.target.value)}
-                  className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+                  className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
                 />
               </div>
 
-              <div className="rounded-3xl border border-white/15 bg-white/10 p-4 text-left">
+              <div className="rounded-3xl border border-white/15 bg-white/10 p-4">
                 <h2 className="font-black text-purple-300">Children Details</h2>
-
-                {children.length === 0 && (
-                  <p className="mt-2 text-sm text-white/60">
-                    Add children details if applicable.
-                  </p>
-                )}
 
                 <div className="mt-4 space-y-4">
                   {children.map((child, index) => (
@@ -296,24 +264,19 @@ export default function SignupPage() {
                         type="text"
                         placeholder={`Child ${index + 1} Name`}
                         value={child.name}
-                        onChange={(e) =>
-                          updateChild(index, "name", e.target.value)
-                        }
-                        className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+                        onChange={(e) => updateChild(index, "name", e.target.value)}
+                        className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
                       />
 
                       <div className="mt-3 space-y-2">
                         <label className="text-sm font-bold text-purple-300">
                           Child {index + 1} DOB
                         </label>
-
                         <input
                           type="date"
                           value={child.dob}
-                          onChange={(e) =>
-                            updateChild(index, "dob", e.target.value)
-                          }
-                          className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
+                          onChange={(e) => updateChild(index, "dob", e.target.value)}
+                          className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 outline-none"
                         />
                       </div>
 
@@ -337,51 +300,31 @@ export default function SignupPage() {
             </>
           )}
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
-          />
-
-          <input
-            type="password"
-            placeholder="Confirm Password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full rounded-2xl border border-white/15 bg-white/10 p-4 text-white outline-none"
-          />
-
           <button
-            onClick={handleSignup}
+            onClick={saveProfile}
             className="w-full rounded-2xl bg-purple-600 p-4 font-bold"
           >
-            Create Account
+            Save Profile
           </button>
-        </div>
-
-        <div className="mt-6">
-          <a href="/login" className="text-purple-300 font-semibold">
-            Already have an account? Login
-          </a>
         </div>
 
         {popupMessage && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-5">
-            <div className="w-full max-w-sm rounded-3xl border border-white/15 bg-[#0F172A] p-6 text-center shadow-2xl">
+            <div className="w-full max-w-sm rounded-3xl border border-white/15 bg-[#0F172A] p-6 text-center">
               <img
                 src="/church-logo.png"
                 alt="Agape Bible Church Logo"
                 className="mx-auto h-24 w-24 object-contain"
               />
-
-              <h2 className="mt-4 text-2xl font-black">Signup</h2>
-
-              <p className="mt-4 text-white/70 leading-7">{popupMessage}</p>
-
+              <h2 className="mt-4 text-2xl font-black">Profile</h2>
+              <p className="mt-4 text-white/70">{popupMessage}</p>
               <button
-                onClick={() => setPopupMessage("")}
+                onClick={() => {
+                  setPopupMessage("");
+                  if (popupMessage === "Profile updated successfully.") {
+                    window.location.href = "/profile";
+                  }
+                }}
                 className="mt-6 w-full rounded-2xl bg-purple-600 p-4 font-bold"
               >
                 Okay
